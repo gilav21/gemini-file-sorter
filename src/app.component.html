@@ -1,0 +1,228 @@
+<main class="min-h-screen bg-slate-50 text-slate-800 p-4 sm:p-6 lg:p-8">
+  <div class="max-w-4xl mx-auto">
+    
+    <!-- Header -->
+    <header class="text-center mb-8">
+      <div class="inline-flex items-center gap-3">
+        <svg class="w-10 h-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" /></svg>
+        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">AI File Organizer</h1>
+      </div>
+      <p class="mt-2 text-lg text-slate-600">Let Gemini automatically categorize your images and PDFs.</p>
+    </header>
+
+    <!-- Step 1: Define Folders -->
+    <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+      <label for="folders" class="block text-lg font-semibold text-slate-800 mb-2">1. Define Your Folder Categories</label>
+      <p class="text-sm text-slate-500 mb-3">Enter folder names separated by commas. These are the categories Gemini will choose from.</p>
+      <textarea 
+        id="folders" 
+        [value]="folders()"
+        (input)="onFoldersInput($event)"
+        rows="2"
+        placeholder="e.g., Invoices, Receipts, Holidays..."
+        class="w-full p-3 border border-slate-600 bg-slate-800 text-slate-200 placeholder-slate-400 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+      ></textarea>
+    </div>
+
+    <!-- Step 2: Upload Files -->
+    <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+      <h2 class="text-lg font-semibold text-slate-800 mb-3">2. Upload Your Files</h2>
+      <div 
+        (drop)="handleFileDrop($event)"
+        (dragover)="handleDragOver($event)"
+        (dragleave)="handleDragLeave($event)"
+        [class.border-indigo-500]="isDragging()"
+        [class.bg-indigo-50]="isDragging()"
+        class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center transition-colors duration-200"
+      >
+        <!-- Hidden inputs for file and directory selection -->
+        <input 
+            type="file" 
+            id="file-upload" 
+            multiple
+            accept="image/*,.pdf"
+            (change)="handleFileSelect($event)" 
+            class="hidden"
+        >
+        <input 
+            type="file" 
+            id="directory-upload"
+            (change)="handleDirectorySelect($event)" 
+            webkitdirectory
+            class="hidden"
+        >
+
+        <div class="flex flex-col items-center gap-2">
+            <svg class="w-12 h-12 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" /></svg>
+            
+            <div class="flex items-baseline gap-2 mt-2">
+                <label for="file-upload" class="cursor-pointer text-indigo-600 font-semibold hover:text-indigo-800 transition-colors">Upload files</label>
+                <span class="text-slate-500 text-sm">or</span>
+                <label for="directory-upload" class="cursor-pointer text-indigo-600 font-semibold hover:text-indigo-800 transition-colors">Select a folder</label>
+            </div>
+            
+            <span class="text-slate-500"> or drag and drop</span>
+            <span class="text-xs text-slate-400 mt-1">Images & PDFs will be analyzed (PNG, JPG, PDF, etc.)</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Step 3: Organize Files & Results -->
+    @if (files().length > 0) {
+      <div class="bg-white p-6 rounded-xl shadow-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-slate-800">3. Organize Your Files</h2>
+            <button (click)="clearAll()" class="text-sm text-slate-500 hover:text-red-600 transition-colors">Clear All</button>
+        </div>
+
+        <div class="space-y-3">
+          @for (file of files(); track file.name) {
+            <div class="flex items-start gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <!-- Thumbnail -->
+              <div class="w-16 h-16 flex-shrink-0 cursor-pointer group" (click)="openModal(file)">
+                @if (file.type.startsWith('image/')) {
+                  <img [src]="file.safeUrl" [alt]="file.name" class="w-full h-full rounded-md object-cover transition-transform duration-200 group-hover:scale-105">
+                } @else {
+                  <div class="w-full h-full rounded-md bg-slate-200 flex items-center justify-center transition-colors duration-200 group-hover:bg-slate-300">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-slate-500"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+                  </div>
+                }
+              </div>
+              
+              <!-- File Info & Analysis -->
+              <div class="flex-grow min-w-0">
+                <p class="font-medium text-slate-800 truncate" [title]="file.name">{{ file.name }}</p>
+                <p class="text-sm text-slate-500">{{ (file.size / 1024).toFixed(1) }} KB</p>
+
+                @if (file.status === 'done') {
+                    @if (file.summary) {
+                        <p class="text-sm text-slate-600 mt-2 border-l-2 border-slate-300 pl-2 italic">
+                            {{ file.summary }}
+                        </p>
+                    }
+                    @if (file.tags && file.tags.length > 0) {
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                        @for (tag of file.tags; track tag) {
+                            <span class="bg-indigo-100 text-indigo-800 text-xs font-medium px-2.5 py-1 rounded-full">{{ tag }}</span>
+                        }
+                        </div>
+                    }
+
+                    <!-- Actions Box -->
+                    <div class="mt-3 p-3 bg-slate-100 rounded-lg space-y-3 border border-slate-200">
+                        <div class="flex items-center text-sm">
+                            <input type="checkbox" [id]="'rename-' + file.name" [checked]="file.useNewName" (change)="toggleUseNewName(file.name)" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                            <label [for]="'rename-' + file.name" class="ml-2 flex items-baseline gap-2 flex-grow min-w-0">
+                                <span class="font-medium text-slate-700">Rename to:</span>
+                                <span class="font-mono text-indigo-700 text-xs break-all" [title]="file.suggestedName">{{ file.suggestedName }}</span>
+                            </label>
+                        </div>
+                        <div class="flex items-center text-sm">
+                            <label [for]="'move-to-' + file.name" class="font-medium text-slate-700 mr-2 shrink-0">Move to:</label>
+                            <select [id]="'move-to-' + file.name" (change)="updateFinalFolder(file.name, $event)" class="flex-1 min-w-0 p-1.5 border border-slate-300 bg-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-slate-800">
+                                <option value="--do-not-move--">-- Do not move --</option>
+                                @for (folder of foldersForSelect(); track folder) {
+                                    <option [value]="folder" [selected]="folder === file.finalFolder">{{ folder }}</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+              </div>
+
+              <!-- Status -->
+              <div class="flex flex-col items-end gap-3 w-32 justify-start flex-shrink-0">
+                @switch (file.status) {
+                  @case ('pending') {
+                    <span class="text-sm text-slate-500 text-right">Ready to analyze</span>
+                  }
+                  @case ('processing') {
+                    <div class="flex items-center gap-2">
+                        <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span class="text-sm text-slate-500">Analyzing...</span>
+                    </div>
+                  }
+                  @case ('done') {
+                    <div class="flex items-center gap-2 bg-green-100 text-green-800 text-sm font-medium px-3 py-1 rounded-full">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg>
+                      <span>Analyzed</span>
+                    </div>
+                  }
+                  @case ('error') {
+                    <div class="flex items-center gap-2 bg-red-100 text-red-800 text-sm font-medium px-3 py-1 rounded-full" [title]="file.errorMessage">
+                        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        <span>Error</span>
+                    </div>
+                  }
+                }
+                <!-- Remove Button -->
+                <button (click)="removeFile(file.name)" class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-full flex-shrink-0">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+            </div>
+          }
+        </div>
+        
+        <!-- Action Button -->
+        <div class="mt-6">
+          <button
+            (click)="organizeFiles()"
+            [disabled]="!canOrganize"
+            class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-200"
+            >
+            @if(isProcessing()) {
+              <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              <span>Processing...</span>
+            } @else {
+              <span>Organize Files</span>
+            }
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- Step 4: Finalize & Export -->
+    @if (canDownloadScript()) {
+      <div class="bg-white p-6 rounded-xl shadow-md mt-8">
+        <h2 class="text-lg font-semibold text-slate-800 mb-3">4. Finalize & Export</h2>
+        <p class="text-sm text-slate-500 mb-4">
+            Download a PowerShell script to perform the file operations on your computer.
+            Save the script in the same folder as your original files and then run it.
+        </p>
+        <button
+            (click)="generateAndDownloadScript()"
+            class="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-green-700 transition-all duration-200"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" /></svg>
+            <span>Download .ps1 Script (for Windows)</span>
+        </button>
+      </div>
+    }
+    
+  </div>
+
+  <!-- File Viewer Modal -->
+  @if (fileInModal(); as file) {
+    <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" (click)="closeModal()">
+      <div class="bg-white rounded-lg shadow-2xl max-w-4xl max-h-[90vh] w-full flex flex-col" (click)="$event.stopPropagation()">
+        <!-- Modal Header -->
+        <div class="flex justify-between items-center p-4 border-b">
+          <p class="font-semibold text-slate-800 truncate" [title]="file.name">{{ file.name }}</p>
+          <button (click)="closeModal()" class="text-slate-500 hover:text-red-600 transition-colors p-1 rounded-full">
+            <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <!-- Modal Content -->
+        <div class="p-4 flex-grow overflow-auto flex items-center justify-center">
+          @if (file.type.startsWith('image/')) {
+            <img [src]="file.safeUrl" [alt]="file.name" class="max-w-full max-h-full object-contain">
+          } @else if (file.type === 'application/pdf') {
+            <iframe [src]="file.safeUrl" class="w-full h-[75vh]" title="PDF Preview"></iframe>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</main>

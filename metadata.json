@@ -1,0 +1,5 @@
+{
+  "name": "AI File Organizer",
+  "description": "Upload images and provide a list of folders. Gemini will analyze each image and suggest the best folder to organize it into.",
+  "requestFramePermissions": []
+}
