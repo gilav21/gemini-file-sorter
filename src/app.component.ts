@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { GeminiService } from './services/gemini.service';
+import { PdfViewerComponent } from './pdf-viewer.component';
 
 type FileStatus = 'pending' | 'processing' | 'done' | 'error';
 
@@ -26,7 +27,7 @@ interface AppFile {
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule],
+  imports: [CommonModule, PdfViewerComponent],
 })
 export class AppComponent {
   private geminiService = inject(GeminiService);
@@ -38,6 +39,14 @@ export class AppComponent {
   isProcessing = signal(false);
   isDragging = signal(false);
   fileInModal = signal<AppFile | null>(null);
+
+  processedCount = signal(0);
+  totalToProcess = signal(0);
+  progressPercentage = computed(() => {
+    const total = this.totalToProcess();
+    if (total === 0) return 0;
+    return (this.processedCount() / total) * 100;
+  });
 
   foldersForSelect = computed(() => {
     const folderList = this.folders().split(',').map(f => f.trim()).filter(f => f);
@@ -187,82 +196,86 @@ export class AppComponent {
   }
 
   async organizeFiles(): Promise<void> {
-    if (this.isProcessing() || this.files().length === 0) {
-      return;
-    }
+    if (this.isProcessing()) return;
+
+    const filesToProcess = this.files().filter(f => f.status === 'pending');
+    if (filesToProcess.length === 0) return;
 
     this.isProcessing.set(true);
-    const folderList = this.folders().split(',').map(f => f.trim()).filter(f => f);
+    this.totalToProcess.set(filesToProcess.length);
+    this.processedCount.set(0);
 
-    if(folderList.length === 0) {
+    const folderList = this.folders().split(',').map(f => f.trim()).filter(f => f);
+    if (folderList.length === 0) {
         alert('Please define at least one folder category.');
         this.isProcessing.set(false);
         return;
     }
 
-    const filesToProcess = this.files();
-
-    for (const file of filesToProcess) {
-      if(file.status !== 'pending') continue;
-
-      this.files.update(current =>
-        current.map(f => (f.name === file.name ? { ...f, status: 'processing' } : f))
-      );
-
-      try {
-        const result = await this.geminiService.analyzeFile(file, folderList);
+    const CONCURRENCY_LIMIT = 5;
+    
+    // Set initial status to 'processing' for all pending files for immediate UI feedback
+    this.files.update(current =>
+        current.map(f => (f.status === 'pending' ? { ...f, status: 'processing' } : f))
+    );
+    
+    for (let i = 0; i < filesToProcess.length; i += CONCURRENCY_LIMIT) {
+        const batch = filesToProcess.slice(i, i + CONCURRENCY_LIMIT);
         
-        // Sanitize suggestions from Gemini to remove illegal filesystem characters.
-        const suggestedFolder = this.sanitizeName(result.folder.trim());
-        const suggestedFilename = this.sanitizeName(result.suggestedFilename.trim());
+        // Process batch concurrently
+        await Promise.all(batch.map(async (file) => {
+            try {
+                const result = await this.geminiService.analyzeFile(file, folderList);
+                
+                const suggestedFolder = this.sanitizeName(result.folder.trim());
+                const suggestedFilename = this.sanitizeName(result.suggestedFilename.trim());
 
-        // Check if the suggested folder (case-insensitively) is a new one.
-        const existingFolders = this.foldersForSelect();
-        const match = existingFolders.find(f => f.toLowerCase() === suggestedFolder.toLowerCase());
-        
-        let finalFolder: string;
-
-        if (match) {
-            // It's an existing folder, use the original casing.
-            finalFolder = match;
-        } else {
-            // It's a new folder suggestion.
-            finalFolder = suggestedFolder;
-            // Add the new folder to our list of folders.
-            // This will automatically update the dropdowns for all files via signals.
-            this.folders.update(currentFolders => {
-                const currentList = currentFolders.split(',').map(f => f.trim()).filter(f => f);
-                if (!currentList.find(f => f.toLowerCase() === finalFolder.toLowerCase())) {
-                    return [...currentList, finalFolder].join(', ');
+                const existingFolders = this.foldersForSelect();
+                const match = existingFolders.find(f => f.toLowerCase() === suggestedFolder.toLowerCase());
+                
+                let finalFolder: string;
+                if (match) {
+                    finalFolder = match;
+                } else {
+                    finalFolder = suggestedFolder;
+                    // Add new folder to the list so it's available for other files
+                    this.folders.update(currentFolders => {
+                        const currentList = currentFolders.split(',').map(f => f.trim()).filter(f => f);
+                        if (!currentList.find(f => f.toLowerCase() === finalFolder.toLowerCase())) {
+                            return [...currentList, finalFolder].join(', ');
+                        }
+                        return currentFolders;
+                    });
                 }
-                return currentFolders;
-            });
-        }
 
-        this.files.update(current =>
-          current.map(f =>
-            f.name === file.name
-              ? { 
-                  ...f, 
-                  status: 'done', 
-                  suggestion: suggestedFolder, 
-                  finalFolder: finalFolder,
-                  tags: result.tags, 
-                  summary: result.summary, 
-                  suggestedName: suggestedFilename 
-                }
-              : f
-          )
-        );
-      } catch (error) {
-        this.files.update(current =>
-          current.map(f =>
-            f.name === file.name
-              ? { ...f, status: 'error', errorMessage: 'AI analysis failed.' }
-              : f
-          )
-        );
-      }
+                this.files.update(current =>
+                    current.map(f =>
+                        f.name === file.name
+                        ? { 
+                            ...f, 
+                            status: 'done', 
+                            suggestion: suggestedFolder, 
+                            finalFolder: finalFolder,
+                            tags: result.tags, 
+                            summary: result.summary, 
+                            suggestedName: suggestedFilename 
+                            }
+                        : f
+                    )
+                );
+            } catch (error) {
+                this.files.update(current =>
+                    current.map(f =>
+                        f.name === file.name
+                        ? { ...f, status: 'error', errorMessage: 'AI analysis failed.' }
+                        : f
+                    )
+                );
+            } finally {
+                // Always update progress count
+                this.processedCount.update(c => c + 1);
+            }
+        }));
     }
 
     this.isProcessing.set(false);

@@ -165,20 +165,27 @@
           }
         </div>
         
-        <!-- Action Button -->
+        <!-- Action Button / Progress Bar -->
         <div class="mt-6">
-          <button
-            (click)="organizeFiles()"
-            [disabled]="!canOrganize"
-            class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-200"
-            >
-            @if(isProcessing()) {
-              <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-              <span>Processing...</span>
-            } @else {
+          @if(isProcessing()) {
+            <div class="w-full">
+              <div class="flex justify-between mb-1">
+                <span class="text-base font-medium text-indigo-700">Processing...</span>
+                <span class="text-sm font-medium text-indigo-700">{{ processedCount() }} / {{ totalToProcess() }} files</span>
+              </div>
+              <div class="w-full bg-slate-200 rounded-full h-4">
+                <div class="bg-indigo-600 h-4 rounded-full transition-all duration-300 ease-linear" [style.width.%]="progressPercentage()"></div>
+              </div>
+            </div>
+          } @else {
+            <button
+              (click)="organizeFiles()"
+              [disabled]="!canOrganize"
+              class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-200"
+              >
               <span>Organize Files</span>
-            }
-          </button>
+            </button>
+          }
         </div>
       </div>
     }
@@ -219,7 +226,7 @@
           @if (file.type.startsWith('image/')) {
             <img [src]="file.safeUrl" [alt]="file.name" class="max-w-full max-h-full object-contain">
           } @else if (file.type === 'application/pdf') {
-            <iframe [src]="file.safeUrl" class="w-full h-[75vh]" title="PDF Preview"></iframe>
+            <app-pdf-viewer [pdfSrc]="file.dataUrl"></app-pdf-viewer>
           }
         </div>
       </div>
