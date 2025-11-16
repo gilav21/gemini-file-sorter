@@ -7,91 +7,121 @@
         <svg class="w-10 h-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" /></svg>
         <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">AI File Organizer</h1>
       </div>
-      <p class="mt-2 text-lg text-slate-600">Let Gemini automatically categorize your images and PDFs.</p>
+      <p class="mt-2 text-lg text-slate-600">Let Gemini automatically categorize your images, PDFs, and .docx documents.</p>
     </header>
 
-    <!-- Step 1: Define Folders -->
-    <div class="bg-white p-6 rounded-xl shadow-md mb-8">
-      <label for="folders" class="block text-lg font-semibold text-slate-800 mb-2">1. Define Your Folder Categories</label>
-      <p class="text-sm text-slate-500 mb-3">Enter folder names separated by commas. These are the categories Gemini will choose from.</p>
-      <textarea 
-        id="folders" 
-        [value]="folders()"
-        (input)="onFoldersInput($event)"
-        rows="2"
-        placeholder="e.g., Invoices, Receipts, Holidays..."
-        class="w-full p-3 border border-slate-600 bg-slate-800 text-slate-200 placeholder-slate-400 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-      ></textarea>
-    </div>
-
-    <!-- Step 2: Upload Files -->
-    <div class="bg-white p-6 rounded-xl shadow-md mb-8">
-      <h2 class="text-lg font-semibold text-slate-800 mb-3">2. Upload Your Files</h2>
-      <div 
-        (drop)="handleFileDrop($event)"
-        (dragover)="handleDragOver($event)"
-        (dragleave)="handleDragLeave($event)"
-        [class.border-indigo-500]="isDragging()"
-        [class.bg-indigo-50]="isDragging()"
-        class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center transition-colors duration-200"
-      >
-        <!-- Hidden inputs for file and directory selection -->
-        <input 
-            type="file" 
-            id="file-upload" 
-            multiple
-            accept="image/*,.pdf"
-            (change)="handleFileSelect($event)" 
-            class="hidden"
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <!-- Left Column: Source Files -->
+      <div class="bg-white p-6 rounded-xl shadow-md flex flex-col">
+        <h2 class="text-lg font-semibold text-slate-800 mb-3">1. Select Files to Organize</h2>
+        <div 
+          (drop)="handleFileDrop($event)"
+          (dragover)="handleDragOver($event)"
+          (dragleave)="handleDragLeave($event)"
+          [class.border-indigo-500]="isDragging()"
+          [class.bg-indigo-50]="isDragging()"
+          class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center transition-colors duration-200"
         >
-        <input 
-            type="file" 
-            id="directory-upload"
-            (change)="handleDirectorySelect($event)" 
-            webkitdirectory
-            class="hidden"
-        >
+          <!-- Hidden inputs are now separated for clarity -->
+          <input 
+              type="file" 
+              id="file-upload" 
+              multiple
+              accept="image/*,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              (change)="handleFileSelect($event)" 
+              class="hidden"
+          >
+          <input 
+              type="file" 
+              id="source-folder-upload"
+              (change)="handleSourceFolderSelect($event)" 
+              webkitdirectory
+              class="hidden"
+          >
+          <input 
+              type="file" 
+              id="category-folder-upload"
+              (change)="handleCategoryFolderSelect($event)" 
+              webkitdirectory
+              class="hidden"
+          >
 
-        <div class="flex flex-col items-center gap-2">
-            <svg class="w-12 h-12 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" /></svg>
-            
-            <div class="flex items-baseline gap-2 mt-2">
-                <label for="file-upload" class="cursor-pointer text-indigo-600 font-semibold hover:text-indigo-800 transition-colors">Upload files</label>
-                <span class="text-slate-500 text-sm">or</span>
-                <label for="directory-upload" class="cursor-pointer text-indigo-600 font-semibold hover:text-indigo-800 transition-colors">Select a folder</label>
-            </div>
-            
-            <span class="text-slate-500"> or drag and drop</span>
-            <span class="text-xs text-slate-400 mt-1">Images & PDFs will be analyzed (PNG, JPG, PDF, etc.)</span>
+          <div class="flex flex-col items-center gap-2">
+              <svg class="w-12 h-12 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" /></svg>
+              
+              <div class="flex items-baseline gap-2 mt-2">
+                  <label for="file-upload" class="cursor-pointer text-indigo-600 font-semibold hover:text-indigo-800 transition-colors">Upload files</label>
+                  <span class="text-slate-500 text-sm">or</span>
+                  <label for="source-folder-upload" class="cursor-pointer text-indigo-600 font-semibold hover:text-indigo-800 transition-colors">Select Folder</label>
+              </div>
+              
+              <span class="text-slate-500"> or drag and drop</span>
+              <span class="text-xs text-slate-400 mt-1">Images, PDFs, & .docx will be analyzed</span>
+          </div>
         </div>
+        @if (sourceFolderName(); as folderName) {
+            <div class="mt-4 text-sm bg-indigo-100 text-indigo-800 p-3 rounded-lg w-full text-center">
+                <span class="font-semibold">Source Folder:</span> {{ folderName }}
+            </div>
+        }
+      </div>
+
+      <!-- Right Column: Target Categories -->
+      <div class="bg-white p-6 rounded-xl shadow-md flex flex-col">
+        <label for="folders" class="block text-lg font-semibold text-slate-800 mb-2">2. Define Target Categories</label>
+        <p class="text-sm text-slate-500 mb-3">Manually enter folder paths separated by commas, or scan an existing folder structure.</p>
+        
+        <label for="category-folder-upload" class="w-full mb-3 cursor-pointer inline-flex items-center justify-center gap-2 bg-slate-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-slate-800 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 12.12 6H16.5A1.5 1.5 0 0 1 18 7.5v.062A3.001 3.001 0 0 0 15.12 6H12.12a1.5 1.5 0 0 1-1.06-.44L7.94 2.44A1.5 1.5 0 0 0 6.88 2H3.5A1.5 1.5 0 0 0 2 3.5v11A1.5 1.5 0 0 0 3.5 16h6.062A3.001 3.001 0 0 1 9.5 18H3.5A1.5 1.5 0 0 1 2 16.5v-13Z" /><path d="M14.5 10a.5.5 0 0 1 .5.5v2.5h2.5a.5.5 0 0 1 0 1h-2.5v2.5a.5.5 0 0 1-1 0v-2.5h-2.5a.5.5 0 0 1 0-1h2.5v-2.5a.5.5 0 0 1 .5-.5Z" /></svg>
+          Scan Folder Structure
+        </label>
+        
+        @if (destinationFolderName(); as folderName) {
+            <div class="mb-3 text-sm bg-indigo-100 text-indigo-800 p-3 rounded-lg w-full text-center">
+                <span class="font-semibold">Destination Root:</span> {{ folderName }}
+            </div>
+        }
+
+        <textarea 
+          id="folders" 
+          [value]="folders()"
+          (input)="onFoldersInput($event)"
+          rows="4"
+          placeholder="e.g., Personal/Photos, Work/Projects/Q3..."
+          class="w-full p-3 border border-slate-600 bg-slate-800 text-slate-200 placeholder-slate-400 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+        ></textarea>
       </div>
     </div>
     
-    <!-- Step 3: Organize Files & Results -->
+    <!-- Results Section -->
     @if (files().length > 0) {
-      <div class="bg-white p-6 rounded-xl shadow-md">
+      <div class="bg-white p-6 rounded-xl shadow-md mt-8">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-slate-800">3. Organize Your Files</h2>
+            <h2 class="text-lg font-semibold text-slate-800">3. Review & Organize</h2>
             <button (click)="clearAll()" class="text-sm text-slate-500 hover:text-red-600 transition-colors">Clear All</button>
         </div>
 
         <div class="space-y-3">
-          @for (file of files(); track file.name) {
+          @for (file of files(); track file.id) {
             <div class="flex items-start gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
               <!-- Thumbnail -->
               <div class="w-16 h-16 flex-shrink-0 cursor-pointer group" (click)="openModal(file)">
                 @if (file.type.startsWith('image/')) {
                   <img [src]="file.safeUrl" [alt]="file.name" class="w-full h-full rounded-md object-cover transition-transform duration-200 group-hover:scale-105">
-                } @else {
+                } @else if (file.type === 'application/pdf') {
                   <div class="w-full h-full rounded-md bg-slate-200 flex items-center justify-center transition-colors duration-200 group-hover:bg-slate-300">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-slate-500"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+                  </div>
+                } @else {
+                  <div class="w-full h-full rounded-md bg-slate-200 flex items-center justify-center transition-colors duration-200 group-hover:bg-slate-300">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-slate-500"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9Z" /></svg>
                   </div>
                 }
               </div>
               
               <!-- File Info & Analysis -->
               <div class="flex-grow min-w-0">
-                <p class="font-medium text-slate-800 truncate" [title]="file.name">{{ file.name }}</p>
+                <p class="font-medium text-slate-800 truncate" [title]="file.originalPath">{{ file.originalPath }}</p>
                 <p class="text-sm text-slate-500">{{ (file.size / 1024).toFixed(1) }} KB</p>
 
                 @if (file.status === 'done') {
@@ -110,16 +140,26 @@
 
                     <!-- Actions Box -->
                     <div class="mt-3 p-3 bg-slate-100 rounded-lg space-y-3 border border-slate-200">
-                        <div class="flex items-center text-sm">
-                            <input type="checkbox" [id]="'rename-' + file.name" [checked]="file.useNewName" (change)="toggleUseNewName(file.name)" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                            <label [for]="'rename-' + file.name" class="ml-2 flex items-baseline gap-2 flex-grow min-w-0">
-                                <span class="font-medium text-slate-700">Rename to:</span>
-                                <span class="font-mono text-indigo-700 text-xs break-all" [title]="file.suggestedName">{{ file.suggestedName }}</span>
-                            </label>
+                        <div class="flex items-start text-sm">
+                            <input type="checkbox" [id]="'rename-check-' + file.id" [checked]="file.useNewName" (change)="toggleUseNewName(file.id)" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mt-1 flex-shrink-0">
+                            <div class="ml-2 flex flex-col flex-grow min-w-0 gap-1">
+                                <label [for]="'rename-input-' + file.id" class="font-medium text-slate-700">
+                                    Rename to:
+                                </label>
+                                <input 
+                                    type="text" 
+                                    [id]="'rename-input-' + file.id"
+                                    [value]="file.suggestedName || ''"
+                                    (input)="updateSuggestedName(file.id, $event)"
+                                    [disabled]="!file.useNewName"
+                                    class="font-mono text-xs p-1.5 border border-slate-300 bg-white rounded-md w-full focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed transition"
+                                    placeholder="Enter new filename..."
+                                >
+                            </div>
                         </div>
                         <div class="flex items-center text-sm">
-                            <label [for]="'move-to-' + file.name" class="font-medium text-slate-700 mr-2 shrink-0">Move to:</label>
-                            <select [id]="'move-to-' + file.name" (change)="updateFinalFolder(file.name, $event)" class="flex-1 min-w-0 p-1.5 border border-slate-300 bg-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-slate-800">
+                            <label [for]="'move-to-' + file.id" class="font-medium text-slate-700 mr-2 shrink-0">Move to:</label>
+                            <select [id]="'move-to-' + file.id" (change)="updateFinalFolder(file.id, $event)" class="flex-1 min-w-0 p-1.5 border border-slate-300 bg-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-slate-800">
                                 <option value="--do-not-move--">-- Do not move --</option>
                                 @for (folder of foldersForSelect(); track folder) {
                                     <option [value]="folder" [selected]="folder === file.finalFolder">{{ folder }}</option>
@@ -156,7 +196,7 @@
                   }
                 }
                 <!-- Remove Button -->
-                <button (click)="removeFile(file.name)" class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-full flex-shrink-0">
+                <button (click)="removeFile(file.id)" class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-full flex-shrink-0">
                     <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
@@ -190,21 +230,66 @@
       </div>
     }
 
-    <!-- Step 4: Finalize & Export -->
-    @if (canDownloadScript()) {
+    <!-- Download Script Section -->
+    @if (showDownloadSection()) {
       <div class="bg-white p-6 rounded-xl shadow-md mt-8">
-        <h2 class="text-lg font-semibold text-slate-800 mb-3">4. Finalize & Export</h2>
-        <p class="text-sm text-slate-500 mb-4">
-            Download a PowerShell script to perform the file operations on your computer.
-            Save the script in the same folder as your original files and then run it.
-        </p>
-        <button
-            (click)="generateAndDownloadScript()"
-            class="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-green-700 transition-all duration-200"
-        >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" /></svg>
-            <span>Download .ps1 Script (for Windows)</span>
-        </button>
+        <h2 class="text-lg font-semibold text-slate-800 mb-3">4. Finalize & Download Script</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+                <label for="source-path-input" class="block text-sm font-medium text-slate-700">Full Source Path</label>
+                <input 
+                    type="text" 
+                    id="source-path-input"
+                    (input)="onManualSourcePathInput($event)"
+                    [value]="manualSourcePath()"
+                    class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
+                    placeholder="e.g., C:\Users\YourName\Documents"
+                >
+                <p class="mt-1 text-xs text-slate-500">The absolute path to the folder containing your files.</p>
+            </div>
+            <div>
+                <label for="destination-path-input" class="block text-sm font-medium text-slate-700">Full Destination Path</label>
+                <input 
+                    type="text" 
+                    id="destination-path-input"
+                    (input)="onManualDestinationPathInput($event)"
+                    [value]="manualDestinationPath()"
+                    class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm font-mono"
+                    placeholder="e.g., C:\Users\YourName\Pictures\Sorted"
+                >
+                 <p class="mt-1 text-xs text-slate-500">The root path where new category folders will be created.</p>
+            </div>
+        </div>
+
+        @if (canDownloadScript()) {
+            <p class="text-sm text-slate-500 mb-4">
+                Your script is ready! It's configured with the full paths you provided.
+                You can run this script from anywhere on your computer.
+            </p>
+            <button
+                (click)="generateAndDownloadScript()"
+                class="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-green-700 transition-all duration-200"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" /></svg>
+                <span>Download .ps1 Script (for Windows)</span>
+            </button>
+        } @else {
+            <div class="p-4 bg-yellow-50 border border-yellow-300 rounded-lg text-yellow-800">
+                <p class="text-sm font-medium">To generate the script:</p>
+                <ul class="list-disc list-inside text-sm mt-1">
+                    <li>Make sure files have been analyzed in Step 3.</li>
+                    <li>Enter the complete, absolute path for both the source and destination folders above.</li>
+                </ul>
+            </div>
+             <button
+                disabled
+                class="w-full mt-4 flex items-center justify-center gap-2 bg-slate-400 text-white font-semibold py-3 px-4 rounded-lg cursor-not-allowed"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15M9 12l3 3m0 0 3-3m-3 3V2.25" /></svg>
+                <span>Download .ps1 Script (for Windows)</span>
+            </button>
+        }
       </div>
     }
     
@@ -222,11 +307,19 @@
           </button>
         </div>
         <!-- Modal Content -->
-        <div class="p-4 flex-grow overflow-auto flex items-center justify-center">
+        <div class="p-0 sm:p-4 flex-grow overflow-auto flex items-stretch justify-center bg-slate-100">
           @if (file.type.startsWith('image/')) {
-            <img [src]="file.safeUrl" [alt]="file.name" class="max-w-full max-h-full object-contain">
+            <img [src]="file.safeUrl" [alt]="file.name" class="max-w-full max-h-full object-contain self-center">
           } @else if (file.type === 'application/pdf') {
             <app-pdf-viewer [pdfSrc]="file.dataUrl"></app-pdf-viewer>
+          } @else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && file.blob) {
+            <app-docx-viewer [docBlob]="file.blob"></app-docx-viewer>
+          } @else {
+            <div class="text-center p-8 bg-white rounded-lg flex flex-col items-center self-center">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-16 h-16 text-slate-400"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9Z" /></svg>
+                <h3 class="mt-4 text-lg font-medium text-slate-800">Preview Not Available</h3>
+                <p class="mt-1 text-sm text-slate-600">A preview could not be generated for this file.</p>
+            </div>
           }
         </div>
       </div>

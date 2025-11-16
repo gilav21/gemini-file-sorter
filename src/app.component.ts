@@ -3,16 +3,22 @@ import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { GeminiService } from './services/gemini.service';
 import { PdfViewerComponent } from './pdf-viewer.component';
+import { DocxViewerComponent } from './docx-viewer.component';
 
 type FileStatus = 'pending' | 'processing' | 'done' | 'error';
 
 interface AppFile {
+  id: string; // Unique ID for tracking
+  originalFile: File;
   name: string;
   type: string;
   size: number;
   dataUrl: string;
   safeUrl: SafeResourceUrl;
   base64Data: string;
+  originalPath: string; // e.g., "ToSort/invoice-scan.pdf"
+  extractedText?: string;
+  blob?: Blob; // For docx-preview
   status: FileStatus;
   suggestion?: string; // Original AI suggestion
   finalFolder?: string; // User-controlled final choice
@@ -27,11 +33,10 @@ interface AppFile {
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, PdfViewerComponent],
+  imports: [CommonModule, PdfViewerComponent, DocxViewerComponent],
 })
 export class AppComponent {
   private geminiService = inject(GeminiService);
-  // FIX: Explicitly type DomSanitizer to fix type inference issue, which causes compile errors when calling its methods.
   private sanitizer: DomSanitizer = inject(DomSanitizer);
 
   folders = signal('Invoices, Receipts, Personal Photos, Work Documents, Travel');
@@ -39,6 +44,11 @@ export class AppComponent {
   isProcessing = signal(false);
   isDragging = signal(false);
   fileInModal = signal<AppFile | null>(null);
+
+  sourceFolderName = signal<string | null>(null);
+  destinationFolderName = signal<string | null>(null);
+  manualSourcePath = signal('');
+  manualDestinationPath = signal('');
 
   processedCount = signal(0);
   totalToProcess = signal(0);
@@ -49,68 +59,116 @@ export class AppComponent {
   });
 
   foldersForSelect = computed(() => {
-    const folderList = this.folders().split(',').map(f => f.trim()).filter(f => f);
-    if (!folderList.find(f => f.toLowerCase() === 'miscellaneous')) {
-        folderList.push('Miscellaneous');
+    const folderList = this.folders().split(',').map(f => this.sanitizeFolderPath(f)).filter(f => f);
+    const uniqueFolders: string[] = Array.from(new Set(folderList));
+    if (!uniqueFolders.find(f => f.toLowerCase() === 'miscellaneous')) {
+        uniqueFolders.push('Miscellaneous');
     }
-    return folderList;
+    return uniqueFolders.sort();
   });
 
-  // FIX: Added method to handle textarea input to avoid using $any in the template, improving type safety.
   onFoldersInput(event: Event): void {
     this.folders.set((event.target as HTMLTextAreaElement).value);
+    // Manually editing folders voids the scanned destination folder name
+    this.destinationFolderName.set(null);
+    this.manualDestinationPath.set('');
   }
 
   handleFileSelect(event: Event): void {
     const element = event.target as HTMLInputElement;
     const selectedFiles = element.files;
     if (selectedFiles) {
+      // Selecting individual files voids the source folder name
+      this.sourceFolderName.set(null);
+      this.manualSourcePath.set('');
+      this.files.set([]); // Clear existing files for a clean slate
       this.processFiles(Array.from(selectedFiles));
     }
-    // Reset input to allow re-selecting the same files
     if (element) element.value = '';
   }
 
-  handleDirectorySelect(event: Event): void {
+  handleSourceFolderSelect(event: Event): void {
+    const element = event.target as HTMLInputElement;
+    const selectedFiles = element.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+    
+    const allFiles = Array.from(selectedFiles);
+
+    // Extract source folder name from the first file's path
+    const firstFileRelativePath = (allFiles[0] as any).webkitRelativePath;
+    if (firstFileRelativePath) {
+      const pathParts = firstFileRelativePath.split('/');
+      if (pathParts.length > 1) {
+        const folderName = pathParts[0];
+        this.sourceFolderName.set(folderName);
+        this.manualSourcePath.set(folderName);
+      }
+    }
+
+    // Filter for top-level files of supported types
+    const filesToProcess = allFiles.filter(file => {
+      const relativePath = (file as any).webkitRelativePath;
+      if (!relativePath) return false;
+      
+      const parts = relativePath.split('/');
+      // Top-level files are in the directory selected, so the path is "FolderName/file.ext"
+      const isTopLevel = parts.length === 2;
+      
+      return isTopLevel && this.isSupportedFileType(file.type);
+    });
+
+    // When selecting a new source, clear old files
+    this.files.set([]);
+    this.processFiles(filesToProcess);
+    if (element) element.value = '';
+  }
+
+  handleCategoryFolderSelect(event: Event): void {
     const element = event.target as HTMLInputElement;
     const selectedFiles = element.files;
     if (!selectedFiles || selectedFiles.length === 0) return;
 
     const allFiles = Array.from(selectedFiles);
-    const folderNames = new Set<string>();
-    const filesToProcess: File[] = [];
-    
-    // The first part of webkitRelativePath is the name of the directory selected.
-    const rootPath = (allFiles[0] as any).webkitRelativePath.split('/')[0];
 
+    // Extract destination folder name from the first file's path
+    const firstFileRelativePath = (allFiles[0] as any).webkitRelativePath;
+    if (firstFileRelativePath) {
+      const pathParts = firstFileRelativePath.split('/');
+      if (pathParts.length > 1) {
+        const folderName = pathParts[0];
+        this.destinationFolderName.set(folderName);
+        this.manualDestinationPath.set(folderName);
+      }
+    }
+
+    const folderNames = new Set<string>();
+    
     for (const file of allFiles) {
       const relativePath = (file as any).webkitRelativePath;
       if (!relativePath) continue;
 
-      // Get path relative to the selected directory by removing the root folder name.
-      const pathInsideSelectedDir = relativePath.substring(rootPath.length + 1);
-      if (!pathInsideSelectedDir) continue; // Skip the root folder itself if it appears as an entry
-
-      const pathParts = pathInsideSelectedDir.split('/');
-
-      if (pathParts.length > 1) { 
-        // File is in a subdirectory, use the subdirectory name as a category.
-        folderNames.add(pathParts[0]);
-      } else {
-        // File is directly in the selected directory.
-        if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-          filesToProcess.push(file);
+      const pathParts = relativePath.split('/');
+      pathParts.shift(); // Remove the root folder name (captured above)
+      pathParts.pop(); // Remove the file name
+      
+      if (pathParts.length > 0) {
+        let currentPath = '';
+        // Add all parent paths as well
+        for (const part of pathParts) {
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+            folderNames.add(currentPath);
         }
       }
     }
 
     if (folderNames.size > 0) {
-      this.folders.set(Array.from(folderNames).join(', '));
+      // Overwrite existing folders with the scanned structure
+      this.folders.set([...new Set(Array.from(folderNames))].join(', '));
+    } else {
+      // If no subfolders were found, clear it to avoid confusion.
+      this.folders.set('');
     }
-
-    this.processFiles(filesToProcess);
     
-    // Reset the input value to allow selecting the same directory again.
     if (element) element.value = '';
   }
 
@@ -120,6 +178,10 @@ export class AppComponent {
     this.isDragging.set(false);
     const droppedFiles = event.dataTransfer?.files;
     if (droppedFiles) {
+        // Drag-and-drop is for individual files, so clear folder names
+        this.sourceFolderName.set(null);
+        this.manualSourcePath.set('');
+        this.files.set([]);
         this.processFiles(Array.from(droppedFiles));
     }
   }
@@ -134,6 +196,14 @@ export class AppComponent {
     event.preventDefault();
     event.stopPropagation();
     this.isDragging.set(false);
+  }
+
+  private isSupportedFileType(type: string): boolean {
+    const supportedDocTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    ];
+    return type.startsWith('image/') || supportedDocTypes.includes(type);
   }
 
   private processFiles(selectedFiles: File[]): void {
@@ -151,48 +221,105 @@ export class AppComponent {
     if (filesToProcess.length === 0) return;
 
     for (const file of filesToProcess) {
-      if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-        const reader = new FileReader();
-        reader.onload = (e: any) => {
-          const dataUrl = e.target.result;
-          const base64Data = dataUrl.split(',')[1];
-          filesForSignal.push({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            dataUrl,
-            safeUrl: this.sanitizer.bypassSecurityTrustResourceUrl(dataUrl),
-            base64Data,
-            status: 'pending',
-            useNewName: true,
-          });
-          checkAndUpdateSignal();
-        };
-        reader.readAsDataURL(file);
-      } else {
+      const id = `${file.name}-${file.size}-${Date.now()}`;
+      const originalPath = (file as any).webkitRelativePath || file.name;
+
+      if (!this.isSupportedFileType(file.type)) {
         filesForSignal.push({
+            id,
+            originalFile: file,
             name: file.name,
             type: file.type,
             size: file.size,
             dataUrl: '',
             safeUrl: this.sanitizer.bypassSecurityTrustResourceUrl(''),
             base64Data: '',
+            originalPath,
             status: 'error',
             useNewName: false,
-            errorMessage: 'Only image & PDF files can be analyzed.'
+            errorMessage: 'Only image, PDF & .docx files can be analyzed.'
         });
         checkAndUpdateSignal();
+        continue;
+      }
+
+      if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          const reader = new FileReader();
+          reader.onload = async (e: any) => {
+              const arrayBuffer = e.target.result;
+              try {
+                  const textResult = await (window as any).mammoth.extractRawText({ arrayBuffer });
+
+                  filesForSignal.push({
+                      id,
+                      originalFile: file,
+                      name: file.name,
+                      type: file.type,
+                      size: file.size,
+                      dataUrl: '',
+                      safeUrl: this.sanitizer.bypassSecurityTrustResourceUrl(''),
+                      base64Data: '',
+                      originalPath,
+                      extractedText: textResult.value,
+                      blob: file,
+                      status: 'pending',
+                      useNewName: true,
+                  });
+              } catch (error) {
+                  filesForSignal.push({
+                      id,
+                      originalFile: file,
+                      name: file.name,
+                      type: file.type,
+                      size: file.size,
+                      dataUrl: '',
+                      safeUrl: this.sanitizer.bypassSecurityTrustResourceUrl(''),
+                      base64Data: '',
+                      originalPath,
+                      status: 'error',
+                      useNewName: false,
+                      errorMessage: 'Could not read content from .docx file.',
+                  });
+              } finally {
+                  checkAndUpdateSignal();
+              }
+          };
+          reader.readAsArrayBuffer(file);
+      } else {
+          const reader = new FileReader();
+          reader.onload = (e: any) => {
+              const dataUrl = e.target.result;
+              const base64Data = dataUrl.split(',')[1];
+              filesForSignal.push({
+                  id,
+                  originalFile: file,
+                  name: file.name,
+                  type: file.type,
+                  size: file.size,
+                  dataUrl,
+                  safeUrl: this.sanitizer.bypassSecurityTrustResourceUrl(dataUrl),
+                  base64Data,
+                  originalPath,
+                  status: 'pending',
+                  useNewName: true,
+              });
+              checkAndUpdateSignal();
+          };
+          reader.readAsDataURL(file);
       }
     }
   }
 
-
-  removeFile(fileName: string): void {
-    this.files.update(currentFiles => currentFiles.filter(f => f.name !== fileName));
+  removeFile(fileId: string): void {
+    this.files.update(currentFiles => currentFiles.filter(f => f.id !== fileId));
   }
 
   clearAll(): void {
     this.files.set([]);
+    this.sourceFolderName.set(null);
+    this.destinationFolderName.set(null);
+    this.manualSourcePath.set('');
+    this.manualDestinationPath.set('');
   }
 
   async organizeFiles(): Promise<void> {
@@ -205,7 +332,7 @@ export class AppComponent {
     this.totalToProcess.set(filesToProcess.length);
     this.processedCount.set(0);
 
-    const folderList = this.folders().split(',').map(f => f.trim()).filter(f => f);
+    const folderList = this.foldersForSelect();
     if (folderList.length === 0) {
         alert('Please define at least one folder category.');
         this.isProcessing.set(false);
@@ -214,7 +341,6 @@ export class AppComponent {
 
     const CONCURRENCY_LIMIT = 5;
     
-    // Set initial status to 'processing' for all pending files for immediate UI feedback
     this.files.update(current =>
         current.map(f => (f.status === 'pending' ? { ...f, status: 'processing' } : f))
     );
@@ -222,13 +348,12 @@ export class AppComponent {
     for (let i = 0; i < filesToProcess.length; i += CONCURRENCY_LIMIT) {
         const batch = filesToProcess.slice(i, i + CONCURRENCY_LIMIT);
         
-        // Process batch concurrently
         await Promise.all(batch.map(async (file) => {
             try {
                 const result = await this.geminiService.analyzeFile(file, folderList);
                 
-                const suggestedFolder = this.sanitizeName(result.folder.trim());
-                const suggestedFilename = this.sanitizeName(result.suggestedFilename.trim());
+                const suggestedFolder = this.sanitizeFolderPath(result.folder);
+                const suggestedFilename = this.sanitizeFilename(result.suggestedFilename);
 
                 const existingFolders = this.foldersForSelect();
                 const match = existingFolders.find(f => f.toLowerCase() === suggestedFolder.toLowerCase());
@@ -238,9 +363,8 @@ export class AppComponent {
                     finalFolder = match;
                 } else {
                     finalFolder = suggestedFolder;
-                    // Add new folder to the list so it's available for other files
                     this.folders.update(currentFolders => {
-                        const currentList = currentFolders.split(',').map(f => f.trim()).filter(f => f);
+                        const currentList = currentFolders.split(',').map(f => this.sanitizeFolderPath(f)).filter(f => f);
                         if (!currentList.find(f => f.toLowerCase() === finalFolder.toLowerCase())) {
                             return [...currentList, finalFolder].join(', ');
                         }
@@ -250,7 +374,7 @@ export class AppComponent {
 
                 this.files.update(current =>
                     current.map(f =>
-                        f.name === file.name
+                        f.id === file.id
                         ? { 
                             ...f, 
                             status: 'done', 
@@ -266,13 +390,12 @@ export class AppComponent {
             } catch (error) {
                 this.files.update(current =>
                     current.map(f =>
-                        f.name === file.name
+                        f.id === file.id
                         ? { ...f, status: 'error', errorMessage: 'AI analysis failed.' }
                         : f
                     )
                 );
             } finally {
-                // Always update progress count
                 this.processedCount.update(c => c + 1);
             }
         }));
@@ -285,25 +408,34 @@ export class AppComponent {
       return !this.isProcessing() && this.files().some(f => f.status === 'pending');
   }
 
-  toggleUseNewName(fileName: string): void {
+  toggleUseNewName(fileId: string): void {
     this.files.update(currentFiles =>
         currentFiles.map(f =>
-            f.name === fileName ? { ...f, useNewName: !f.useNewName } : f
+            f.id === fileId ? { ...f, useNewName: !f.useNewName } : f
         )
     );
   }
 
-  updateFinalFolder(fileName: string, event: Event): void {
+  updateFinalFolder(fileId: string, event: Event): void {
     const newFolder = (event.target as HTMLSelectElement).value;
     this.files.update(currentFiles =>
         currentFiles.map(f =>
-            f.name === fileName ? { ...f, finalFolder: newFolder } : f
+            f.id === fileId ? { ...f, finalFolder: newFolder } : f
         )
+    );
+  }
+
+  updateSuggestedName(fileId: string, event: Event): void {
+    const newName = (event.target as HTMLInputElement).value;
+    this.files.update(currentFiles =>
+      currentFiles.map(f =>
+        f.id === fileId ? { ...f, suggestedName: this.sanitizeFilename(newName) } : f
+      )
     );
   }
   
   openModal(file: AppFile): void {
-    if (file.status === 'error') return; // Do not open modal for files that couldn't be read
+    if (file.status === 'error') return;
     this.fileInModal.set(file);
   }
 
@@ -311,33 +443,54 @@ export class AppComponent {
     this.fileInModal.set(null);
   }
 
-  canDownloadScript = computed(() => this.files().some(f => f.status === 'done'));
+  showDownloadSection = computed(() => {
+    return this.files().some(f => f.status === 'done' || f.status === 'error');
+  });
 
-  private sanitizeName(name: string): string {
-    // Windows illegal characters: < > : " / \ | ? *
+  onManualSourcePathInput(event: Event): void {
+    this.manualSourcePath.set((event.target as HTMLInputElement).value);
+  }
+  onManualDestinationPathInput(event: Event): void {
+    this.manualDestinationPath.set((event.target as HTMLInputElement).value);
+  }
+
+  canDownloadScript = computed(() => {
+    const hasAnalyzedFiles = this.files().some(f => f.status === 'done');
+    // A basic check for what might be an absolute path for Windows (C:\) or Linux/Mac (/)
+    const sourcePathValid = this.manualSourcePath().includes(':') || this.manualSourcePath().startsWith('/');
+    const destPathValid = this.manualDestinationPath().includes(':') || this.manualDestinationPath().startsWith('/');
+    return hasAnalyzedFiles && sourcePathValid && destPathValid;
+  });
+
+  private sanitizeFolderPath(path: string): string {
+    if (!path) return '';
+    return path.trim().replace(/[<>:"|?*]/g, '').replace(/[/\\]+/g, '/');
+  }
+  
+  private sanitizeFilename(name: string): string {
     if (!name) return '';
-    return name.replace(/[<>:"/\\|?*]/g, '');
+    // Disallow path separators in filenames
+    return name.trim().replace(/[<>:"/\\|?*]/g, '');
   }
 
   generateAndDownloadScript(): void {
     const analyzedFiles = this.files().filter(f => f.status === 'done');
-    if (analyzedFiles.length === 0) return;
+    const sourcePath = this.manualSourcePath().trim();
+    const destinationPath = this.manualDestinationPath().trim();
+    
+    if (analyzedFiles.length === 0 || !sourcePath || !destinationPath) return;
 
     let scriptContent = `# AI File Organizer - PowerShell Script
 # -------------------------------------
-# Instructions:
-# 1. Save this file as "organize-files.ps1" in the SAME directory as the files you uploaded.
-# 2. Right-click the file and select "Run with PowerShell".
+# INSTRUCTIONS:
+# 1. This script uses the absolute paths you provided. You can run it from anywhere.
+# 2. To run, right-click this file and select "Run with PowerShell".
 #
-# !! If you get an error about scripts being disabled, do the following once: !!
-#    a. Open the Start Menu, type "PowerShell", and open it.
-#    b. Copy and paste the following command, then press Enter:
-#       Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-#    c. Type 'Y' and press Enter to confirm.
-#    d. You can now run the script.
-# -------------------------------------\n\n`;
-
-    scriptContent += `Write-Host "Starting file organization..." -ForegroundColor Green\n\n`;
+# NOTE: If you get an error about scripts being disabled, run this command in PowerShell once:
+# Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+# (And press 'Y' and Enter to confirm)
+# -------------------------------------\n
+`;
     
     const foldersToCreate = [...new Set(
         analyzedFiles
@@ -346,33 +499,55 @@ export class AppComponent {
     )] as string[];
 
     if (foldersToCreate.length > 0) {
-        scriptContent += `# Create destination folders if they don't exist\n`;
+        scriptContent += `# Create destination subfolders if they don't exist\n`;
         foldersToCreate.forEach(folder => {
-            const sanitizedFolder = this.sanitizeName(folder);
-            // In PowerShell, to use a single quote inside a single-quoted string, you double it.
-            const safeFolder = sanitizedFolder.replace(/'/g, "''");
-            scriptContent += `if (-not (Test-Path -Path '${safeFolder}')) { New-Item -ItemType Directory -Path '${safeFolder}' | Out-Null }\n`;
+            const folderForScript = folder.replace(/\//g, '\\').replace(/'/g, "''");
+            const fullDestFolderPath = `${destinationPath.replace(/'/g, "''")}\\${folderForScript}`;
+            scriptContent += `$_folderPath = '${fullDestFolderPath}'
+if (-not (Test-Path -Path $_folderPath)) {
+    Write-Host "Creating folder: $_folderPath"
+    New-Item -ItemType Directory -Path $_folderPath -Force | Out-Null
+}\n`;
         });
         scriptContent += `\n`;
     }
 
     scriptContent += `# Process files\n`;
     analyzedFiles.forEach(file => {
-        const originalName = file.name.replace(/'/g, "''");
-        const suggestedName = file.suggestedName ? file.suggestedName.replace(/'/g, "''") : '';
-        const newName = file.useNewName && suggestedName ? suggestedName : originalName;
+        // originalPath is like "SourceFolderName/image.jpg", we just need the "image.jpg" part
+        const pathParts = file.originalPath.split(/[/\\]+/);
+        const originalFileNameOnly = pathParts.pop()?.replace(/'/g, "''") || file.name.replace(/'/g, "''");
         
+        const sourceFilePath = `${sourcePath.replace(/'/g, "''")}\\${originalFileNameOnly}`;
+        
+        const suggestedNameRaw = file.suggestedName || '';
+        const suggestedName = this.sanitizeFilename(suggestedNameRaw).replace(/'/g, "''");
+        
+        const newName = file.useNewName && suggestedName ? suggestedName : originalFileNameOnly;
         const destinationFolder = file.finalFolder;
 
         if (destinationFolder && destinationFolder !== '--do-not-move--') {
-            const sanitizedDestinationFolder = this.sanitizeName(destinationFolder);
-            const safeDestinationFolder = sanitizedDestinationFolder.replace(/'/g, "''");
-            const destinationPath = `${safeDestinationFolder}\\${newName}`;
-            scriptContent += `Write-Host "Moving '${originalName}' to '${destinationPath}'"\n`;
-            scriptContent += `Move-Item -Path '${originalName}' -Destination '${destinationPath}' -Force\n`;
-        } else if (file.useNewName && newName !== originalName) {
-            scriptContent += `Write-Host "Renaming '${originalName}' to '${newName}'"\n`;
-            scriptContent += `Rename-Item -Path '${originalName}' -NewName '${newName}'\n`;
+            const destFolderForScript = destinationFolder.replace(/\//g, '\\').replace(/'/g, "''");
+            const destinationFilePath = `${destinationPath.replace(/'/g, "''")}\\${destFolderForScript}\\${newName}`;
+            
+            scriptContent += `$_sourceFile = '${sourceFilePath}'
+$_destFile = '${destinationFilePath}'
+if (Test-Path -Path $_sourceFile) {
+    Write-Host "Moving '${originalFileNameOnly}' to '${destFolderForScript}\\${newName}'"
+    Move-Item -Path $_sourceFile -Destination $_destFile -Force
+} else {
+    Write-Host "WARNING: Source file not found, skipping: '${originalFileNameOnly}'" -ForegroundColor Yellow
+}\n`;
+        } else if (file.useNewName && newName !== originalFileNameOnly) {
+            const sourceFilePathForRename = `${sourcePath.replace(/'/g, "''")}\\${originalFileNameOnly}`;
+            scriptContent += `$_sourceFile = '${sourceFilePathForRename}'
+$_newName = '${newName}'
+if (Test-Path -Path $_sourceFile) {
+    Write-Host "Renaming '${originalFileNameOnly}' to '$_newName' in the source folder"
+    Rename-Item -Path $_sourceFile -NewName $_newName
+} else {
+    Write-Host "WARNING: Source file not found, skipping rename for: '${originalFileNameOnly}'" -ForegroundColor Yellow
+}\n`;
         }
     });
     scriptContent += `\n`;
@@ -380,7 +555,6 @@ export class AppComponent {
     scriptContent += `Write-Host "Organization complete." -ForegroundColor Green\n`;
     scriptContent += `Read-Host "Press Enter to exit..."\n`;
 
-    // Prepend UTF-8 BOM, which is standard and well-supported by PowerShell.
     const utf8BOM = "\uFEFF";
     const blob = new Blob([utf8BOM + scriptContent], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);

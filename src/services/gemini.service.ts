@@ -6,6 +6,7 @@ export interface FileForProcessing {
   type: string;
   dataUrl: string;
   base64Data: string;
+  extractedText?: string;
 }
 
 export interface AnalysisResult {
@@ -35,40 +36,46 @@ export class GeminiService {
     file: FileForProcessing,
     folders: string[]
   ): Promise<AnalysisResult> {
-    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
-        throw new Error('Only image and PDF files can be processed.');
-    }
-
+    
     try {
-      const prompt = `You are an expert multi-lingual file organizer. Your primary task is to analyze the provided file and provide categorization details IN THE SAME LANGUAGE as the file's content.
+      const prompt = `You are an expert multi-lingual file organizer. Your primary task is to analyze the provided file content and provide categorization details IN THE SAME LANGUAGE as the file's content.
 
 **CRITICAL INSTRUCTIONS:**
-1.  **Detect Language:** First, determine the primary language of the text content within the file. If the file is an image with no text, use the language of the original filename ("${file.name}") as a guide, or default to English if unsure.
+1.  **Detect Language:** First, determine the primary language of the text content. If the file is an image with no text, use the language of the original filename ("${file.name}") as a guide, or default to English if unsure.
 2.  **Respond in Detected Language:** ALL of your text-based outputs (folder, tags, summary, suggested filename) MUST be in the language you detected in step 1.
 
 **Analysis Steps:**
-The available folders are: ${folders.join(', ')}. These might be in a different language; use them as a reference but prioritize creating logical categories in the detected content language.
+The available folder structure is: ${folders.join(', ')}.
+**IMPORTANT FOLDER SELECTION RULE:** You can choose any part of a path as a category. For example, if you are given 'Documents/Test/Banks/Transfers' as an option, you can choose 'Documents/Test/Banks/Transfers', 'Documents/Test/Banks', or 'Documents/Test' as the destination folder, whichever is most appropriate.
 
 1.  **Analyze Content:** Analyze the content of the file.
-2.  **Choose Folder:** Choose the single most appropriate folder. If the existing folders fit, use one. If not, suggest a NEW folder name in the detected language. The folder name MUST be filesystem-friendly and not contain illegal characters for Windows filenames (e.g., < > : " / \\ | ? *).
+2.  **Choose Folder:** Based on the rule above, choose the single most appropriate folder. If the existing folders fit, use one. If not, suggest a NEW folder name in the detected language. The folder name MUST be filesystem-friendly and not contain illegal characters for Windows filenames (e.g., < > : " / \\ | ? *).
 3.  **Generate Tags:** Generate a list of 3-5 relevant tags in the detected language.
 4.  **Create Summary/Caption:** Create a concise summary (for documents) or a descriptive caption (for images) in the detected language.
 5.  **Suggest Filename:** Suggest a new, filesystem-friendly filename in the detected language. It should be descriptive, use hyphens or underscores as separators (kebab-case or snake_case), and MUST preserve the original file extension. It MUST NOT contain any illegal characters for Windows filenames.
 
 Respond with a JSON object.`;
       
-      const filePart = {
-        inlineData: {
-          mimeType: file.type,
-          data: file.base64Data,
-        },
-      };
-
-      const textPart = { text: prompt };
+      let contents;
+      if (file.extractedText) {
+          // This is a docx file, send text content
+          const fullPrompt = `${prompt}\n\nHere is the content of the document "${file.name}":\n\n${file.extractedText}`;
+          contents = { parts: [{ text: fullPrompt }] };
+      } else {
+          // This is an image or PDF, send file data
+          const filePart = {
+              inlineData: {
+                  mimeType: file.type,
+                  data: file.base64Data,
+              },
+          };
+          const textPart = { text: prompt };
+          contents = { parts: [filePart, textPart] };
+      }
 
       const response = await this.genAI.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: { parts: [filePart, textPart] },
+        contents: contents,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -76,7 +83,7 @@ Respond with a JSON object.`;
                 properties: {
                     folder: {
                         type: Type.STRING,
-                        description: `The suggested folder, IN THE DETECTED LANGUAGE of the file content. This must be filesystem-friendly and not contain illegal characters (< > : " / \\ | ? *). This can be one of [${folders.join(', ')}] or a new folder name if none are suitable.`
+                        description: `The suggested folder, IN THE DETECTED LANGUAGE of the file content. This must be filesystem-friendly. This can be one of [${folders.join(', ')}] or a new folder name if none are suitable. You can also choose a parent directory of any provided path.`
                     },
                     tags: {
                         type: Type.ARRAY,
